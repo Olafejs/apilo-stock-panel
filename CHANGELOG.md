@@ -2,6 +2,12 @@
 
 Wszystkie istotne zmiany publicznej wersji projektu są dokumentowane w tym pliku.
 
+## [Unreleased]
+
+### Changed
+
+- Zaktualizowano i przypięto akcje CI korzystające z runtime Node.js 24.
+
 ## [1.14.1] - 2026-07-27
 
 ### Added
