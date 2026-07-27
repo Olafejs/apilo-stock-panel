@@ -1,0 +1,647 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8">
+    <title>{{ project_name }} - Kanały sprzedaży</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Macierz obecności produktów w kanałach sprzedaży.">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  </head>
+  <body>
+    <main class="container channel-page">
+      <header class="topbar">
+        <div>
+          <h1>Kanały sprzedaży</h1>
+          <p class="subtle">Najważniejsze informacje o ofertach i rozbieżnościach w jednym miejscu.</p>
+        </div>
+        <div class="actions">
+          <a class="btn" href="{{ url_for('index') }}">Magazyn</a>
+          <a class="btn" href="{{ url_for('settings') }}">Ustawienia</a>
+          <form method="post" action="{{ url_for('sync_pull') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="next" value="{{ request.full_path }}">
+            <button class="btn primary" type="submit">Odśwież z Apilo</button>
+          </form>
+          <form method="post" action="{{ url_for('logout') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn" type="submit">Wyloguj</button>
+          </form>
+        </div>
+      </header>
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <section class="messages" aria-live="polite">
+            {% for category, message in messages %}
+              <div class="message {{ category }}"{% if category == 'error' %} role="alert"{% else %} role="status"{% endif %}>{{ message }}</div>
+            {% endfor %}
+          </section>
+        {% endif %}
+      {% endwith %}
+
+      <section class="dashboard channel-summary" aria-label="Podsumowanie kanałów">
+        <div class="metric-card">
+          <span class="metric-label">Produkty</span>
+          <strong class="metric-value">{{ matrix.total_count }}</strong>
+          <span class="metric-subtle">po zastosowaniu filtrów</span>
+        </div>
+        <a class="metric-card{% if status_filter == 'missing' %} active{% endif %}" href="{{ url_for('sales_channels', search=search, channel=channel_filter, status='missing', description=description_filter, palette=palette_filter, limit=limit, page=1) }}">
+          <span class="metric-label">Brak ofert</span>
+          <strong class="metric-value">{{ matrix.totals.missing }}</strong>
+          <span class="metric-subtle">produkty bez oferty</span>
+        </a>
+        <a class="metric-card channel-review-card{% if status_filter == 'review' %} active{% endif %}" href="{{ url_for('sales_channels', search=search, channel=channel_filter, status='review', description=description_filter, palette=palette_filter, limit=limit, page=1) }}">
+          <span class="metric-label">Wymaga poprawy</span>
+          <strong class="metric-value">{{ matrix.totals.review }}</strong>
+          <span class="metric-subtle">nieaktywny status lub kilka ofert</span>
+        </a>
+        <a class="metric-card channel-review-card{% if description_filter == 'mismatch' %} active{% endif %}" href="{{ url_for('sales_channels', search=search, channel=channel_filter, status=status_filter, description='mismatch', palette=palette_filter, limit=limit, page=1) }}">
+          <span class="metric-label">Opisy różne</span>
+          <strong class="metric-value">{{ matrix.description_totals.mismatch }}</strong>
+          <span class="metric-subtle">według ostatniej kontroli</span>
+        </a>
+        <a class="metric-card channel-review-card{% if palette_filter == 'mismatch' %} active{% endif %}" href="{{ url_for('sales_channels', search=search, channel=channel_filter, status=status_filter, description=description_filter, palette='mismatch', limit=limit, page=1) }}">
+          <span class="metric-label">Bloki kolorów różne</span>
+          <strong class="metric-value">{{ matrix.palette_totals.mismatch }}</strong>
+          <span class="metric-subtle">inna treść lub brak w kanale</span>
+        </a>
+      </section>
+
+      <section class="channel-data-status" aria-label="Aktualność danych">
+        <span><strong>Dane ofert:</strong> {{ last_updated or '-' }}</span>
+        <span><strong>Kontrola opisów:</strong> {{ description_last_checked or 'jeszcze nie wykonano' }}</span>
+        <span><strong>Wzorce Apilo:</strong> {{ description_reference_status.count }}</span>
+      </section>
+
+      {% if not channels %}
+        <section class="messages">
+          <div class="message info">Brak aktywnych kanałów w widoku. Zmień widoczność kanałów w <a href="{{ url_for('settings') }}">ustawieniach</a>.</div>
+        </section>
+      {% else %}
+        <section class="channel-filter-bar" aria-label="Filtry kanałów">
+          <a class="filter-pill{% if not channel_filter %} active{% endif %}" href="{{ url_for('sales_channels', search=search, status=status_filter, description=description_filter, palette=palette_filter, limit=limit, page=1) }}">Wszystkie</a>
+          {% for channel in channels %}
+            <a class="filter-pill{% if channel_filter == channel.channel_key %} active{% endif %}" href="{{ url_for('sales_channels', search=search, channel=channel.channel_key, status=status_filter, description=description_filter, palette=palette_filter, limit=limit, page=1) }}">{{ channel.channel_name }}</a>
+          {% endfor %}
+        </section>
+
+        <section class="filters channel-filters">
+          <form method="get" action="{{ url_for('sales_channels') }}">
+            <input type="hidden" name="channel" value="{{ channel_filter }}">
+            <input type="hidden" name="status" value="{{ status_filter }}">
+            <input type="hidden" name="description" value="{{ description_filter }}">
+            <input type="hidden" name="palette" value="{{ palette_filter }}">
+            <input type="hidden" name="limit" value="{{ limit }}">
+            <input type="text" name="search" placeholder="Szukaj po nazwie lub EAN" value="{{ search }}">
+            <button class="btn" type="submit">Szukaj</button>
+            <a class="btn outline" href="{{ url_for('sales_channels', limit=limit, page=1) }}">Wyczyść filtry</a>
+          </form>
+          <div class="hint">Wyniki: {{ matrix.total_count }}</div>
+        </section>
+
+        <p class="channel-scroll-hint">Przesuń tabelę w bok, aby zobaczyć pozostałe kanały.</p>
+        <section class="table-wrap channel-table-wrap" tabindex="0" role="region" aria-label="Tabela produktów i kanałów sprzedaży">
+          <table class="channel-table">
+            <thead>
+              <tr>
+                <th class="channel-product-heading">Produkt</th>
+                {% for channel in channels %}
+                  <th>{{ channel.channel_name }}</th>
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in matrix.rows %}
+                <tr>
+                  <td class="channel-product-cell">
+                    <div class="name">{{ row.product.name or '-' }}</div>
+                    <div class="meta">EAN: {{ row.product.ean or '-' }}</div>
+                    <div class="channel-product-values">Cena: <strong>{{ row.product.price_with_tax|pln if row.product.price_with_tax is not none else '-' }}</strong> · Stan: <strong>{{ row.product.quantity if row.product.quantity is not none else '-' }}</strong></div>
+                    {% if row.product.has_apilo_description %}
+                      <button
+                        class="description-preview-trigger"
+                        type="button"
+                        data-description-url="{{ url_for('sales_channel_apilo_description', apilo_product_id=row.product.apilo_id) }}"
+                        title="Zobacz opis Apilo i szybkie opcje naprawy"
+                      >Sprawdź opis</button>
+                    {% else %}
+                      <span class="description-badge unavailable">Brak wzorca Apilo</span>
+                    {% endif %}
+                  </td>
+                  {% for channel in channels %}
+                    {% set cell = row.cells[channel.channel_key] %}
+                    <td class="channel-cell channel-cell-{{ cell.status }}">
+                      {% if cell.status == 'ok' %}
+                        <span class="channel-status ok">Jest</span>
+                      {% elif cell.status == 'missing' %}
+                        <span class="channel-status missing">Nie ma</span>
+                      {% else %}
+                        <span class="channel-status review">Wymaga poprawy</span>
+                      {% endif %}
+
+                      {% if cell.listings %}
+                        {% if cell.description_status == 'match' %}
+                          <span class="description-badge match">Opis zgodny</span>
+                        {% elif cell.description_status == 'mismatch' %}
+                          <span class="description-badge mismatch">Opis różny</span>
+                        {% elif cell.description_status == 'unavailable' %}
+                          <span class="description-badge unavailable">Brak odczytu opisu</span>
+                        {% elif cell.description_status == 'no_reference' %}
+                          <span class="description-badge unavailable">Brak wzorca Apilo</span>
+                        {% else %}
+                          <span class="description-badge unverified">Opis niesprawdzony</span>
+                        {% endif %}
+                        {% if cell.palette_status == 'match' %}
+                          <span class="description-badge palette-badge match">Kolory {{ cell.palette_material }} zgodne</span>
+                        {% elif cell.palette_status == 'mismatch' %}
+                          <span class="description-badge palette-badge mismatch" title="Treść, interpunkcja, kolejność kolorów lub układ list różni się od wzorca.">Blok kolorów różny</span>
+                        {% elif cell.palette_status == 'missing' %}
+                          <span class="description-badge palette-badge mismatch">Brak bloku kolorów{% if cell.palette_material %} {{ cell.palette_material }}{% endif %}</span>
+                        {% elif cell.palette_status == 'unavailable' %}
+                          <span class="description-badge palette-badge unavailable">Brak odczytu kolorów</span>
+                        {% elif cell.palette_status == 'unverified' %}
+                          <span class="description-badge palette-badge unverified">Kolory niesprawdzone</span>
+                        {% endif %}
+                        <div class="channel-links">
+                          {% for listing in cell.listings %}
+                            <div class="channel-listing-item">
+                              {% if listing.url %}
+                                <a href="{{ listing.url }}" target="_blank" rel="noreferrer" title="{{ listing.listing_name or channel.channel_name }}">{{ listing.link_label }}{% if cell.listings|length > 1 %} {{ loop.index }}{% endif %}</a>
+                              {% endif %}
+                              <span class="channel-offer-values">{{ listing.offer_price|pln if listing.offer_price is not none else '-' }} · stan {{ listing.offer_quantity if listing.offer_quantity is not none else '-' }}</span>
+                            </div>
+                          {% endfor %}
+                        </div>
+                        {% if cell.listings|length > 1 %}
+                          <span class="channel-detail">{{ cell.listings|length }} oferty</span>
+                        {% elif cell.listings[0].status != 2 %}
+                          <span class="channel-detail">Status Apilo: {{ cell.listings[0].status if cell.listings[0].status is not none else '-' }}</span>
+                        {% endif %}
+                      {% endif %}
+                      {% if channel.channel_key == 'empik' and empik_status.verified %}
+                        {% if cell.direct_offers %}
+                          <div class="empik-direct-details">
+                            {% for offer in cell.direct_offers %}
+                              <span class="channel-detail">API: {{ 'aktywna' if offer.active else 'nieaktywna' }} · stan {{ offer.quantity }} · {{ offer.price|pln if offer.price is not none else '-' }}</span>
+                              <span class="channel-detail">ID {{ offer.offer_id }} · kod stanu {{ offer.state_code or '-' }}</span>
+                            {% endfor %}
+                          </div>
+                        {% elif cell.listings %}
+                          <span class="channel-detail empik-unmatched">Brak dopasowania w Empik API</span>
+                        {% endif %}
+                      {% endif %}
+                    </td>
+                  {% endfor %}
+                </tr>
+              {% else %}
+                <tr>
+                  <td colspan="{{ channels|length + 1 }}" class="empty-state">Brak produktów spełniających filtry.</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </section>
+
+        {% if matrix.total_pages > 1 %}
+          <nav class="pagination" aria-label="Strony tabeli kanałów">
+            {% if matrix.page > 1 %}
+              <a class="btn outline" href="{{ url_for('sales_channels', search=search, channel=channel_filter, status=status_filter, description=description_filter, palette=palette_filter, limit=limit, page=matrix.page-1) }}">Poprzednia</a>
+            {% endif %}
+            <span class="hint">Strona {{ matrix.page }} z {{ matrix.total_pages }}</span>
+            {% if matrix.page < matrix.total_pages %}
+              <a class="btn outline" href="{{ url_for('sales_channels', search=search, channel=channel_filter, status=status_filter, description=description_filter, palette=palette_filter, limit=limit, page=matrix.page+1) }}">Następna</a>
+            {% endif %}
+          </nav>
+        {% endif %}
+
+        <section class="channel-note">
+          <strong>Jak czytać statusy:</strong>
+          Status opisu pochodzi z ostatniej kontroli wskazanej nad tabelą. „Opis zgodny” porównuje główny opis produktu z wzorcem Apilo. Blok materiału i kolorów jest sprawdzany osobno. Empik nie udostępnia treści opisu przez obecne API. Cena i stan przy ofercie pochodzą z Apilo.
+        </section>
+      {% endif %}
+
+      <dialog
+        id="apilo-description-dialog"
+        class="description-dialog"
+        data-csrf-token="{{ csrf_token() }}"
+        data-recheck-url="{{ url_for('sales_channel_recheck_description') }}"
+        data-allegro-update-url="{{ url_for('sales_channel_update_allegro_description') }}"
+        data-allegro-palette-update-url="{{ url_for('sales_channel_update_allegro_palette') }}"
+        data-erli-palette-update-url="{{ url_for('sales_channel_update_erli_palette') }}"
+      >
+        <div class="description-dialog-shell">
+          <header class="description-dialog-head">
+            <div>
+              <span class="description-dialog-kicker">Opis wzorcowy Apilo</span>
+              <h2 id="description-dialog-title">Podgląd opisu</h2>
+              <p id="description-dialog-meta" class="subtle"></p>
+            </div>
+            <button class="description-dialog-close" type="button" aria-label="Zamknij">×</button>
+          </header>
+          <div id="description-dialog-message" class="description-dialog-message" aria-live="polite"></div>
+          <section class="description-dialog-preview" aria-label="Treść opisu Apilo">
+            <div id="description-dialog-text">Ładowanie opisu…</div>
+          </section>
+          <div class="description-dialog-actions">
+            <button id="description-copy-text" class="btn" type="button">Kopiuj tekst</button>
+            <button id="description-copy-html" class="btn outline" type="button">Kopiuj HTML</button>
+            <a id="description-open-apilo" class="btn primary" href="#" target="_blank" rel="noreferrer">Otwórz produkt w Apilo</a>
+          </div>
+          <section class="description-repair-section">
+            <h3>Szybka naprawa</h3>
+            <p class="subtle">Apilo pozostaje jedynym źródłem poprawnego opisu i materiału. Dla Allegro możesz zapisać główny opis albo blok materiału i kolorów bezpośrednio, bez użycia LLM.</p>
+            <div id="description-repair-list" class="description-repair-list"></div>
+          </section>
+        </div>
+      </dialog>
+
+      <footer>
+        <span>Wersja {{ app_version }}</span>
+        <span>·</span>
+        <span>{{ now_human }}</span>
+      </footer>
+    </main>
+    <script>
+      (() => {
+        const dialog = document.getElementById("apilo-description-dialog");
+        if (!dialog) return;
+        const title = document.getElementById("description-dialog-title");
+        const meta = document.getElementById("description-dialog-meta");
+        const text = document.getElementById("description-dialog-text");
+        const message = document.getElementById("description-dialog-message");
+        const repairList = document.getElementById("description-repair-list");
+        const openApilo = document.getElementById("description-open-apilo");
+        const copyTextButton = document.getElementById("description-copy-text");
+        const copyHtmlButton = document.getElementById("description-copy-html");
+        let descriptionText = "";
+        let descriptionHtml = "";
+        let currentProductId = "";
+        let currentReferenceHash = "";
+
+        const showMessage = (value, kind = "") => {
+          message.textContent = value;
+          message.className = `description-dialog-message ${kind}`.trim();
+        };
+
+        const copyValue = async (value, label) => {
+          if (!value) {
+            showMessage("Opis nie został jeszcze wczytany.", "error");
+            return;
+          }
+          try {
+            if (navigator.clipboard && window.isSecureContext) {
+              await navigator.clipboard.writeText(value);
+            } else {
+              const area = document.createElement("textarea");
+              area.value = value;
+              area.setAttribute("readonly", "");
+              area.style.position = "fixed";
+              area.style.opacity = "0";
+              document.body.appendChild(area);
+              area.select();
+              document.execCommand("copy");
+              area.remove();
+            }
+            showMessage(`${label} skopiowany.`, "success");
+          } catch (error) {
+            showMessage("Nie udało się skopiować opisu.", "error");
+          }
+        };
+
+        const buildDiffPanel = (diff) => {
+          const panel = document.createElement("section");
+          panel.className = "description-diff-panel";
+          panel.hidden = true;
+          const summary = document.createElement("div");
+          summary.className = "description-diff-summary";
+          const similarity = document.createElement("strong");
+          similarity.textContent = `Podobieństwo treści: ${diff.similarity_percent}%`;
+          const missing = document.createElement("span");
+          missing.className = "description-diff-count missing";
+          missing.textContent = `Brakuje względem wzorca: ${diff.missing_words} słów`;
+          const added = document.createElement("span");
+          added.className = "description-diff-count added";
+          added.textContent = `Dodatkowe względem wzorca: ${diff.added_words} słów`;
+          summary.append(similarity, missing, added);
+
+          const legend = document.createElement("div");
+          legend.className = "description-diff-legend";
+          const missingLegend = document.createElement("span");
+          missingLegend.className = "missing";
+          missingLegend.textContent = "czerwone: jest we wzorcu, brakuje w kanale";
+          const addedLegend = document.createElement("span");
+          addedLegend.className = "added";
+          addedLegend.textContent = "zielone: dodane lub zmienione względem wzorca";
+          legend.append(missingLegend, addedLegend);
+
+          const content = document.createElement("div");
+          content.className = "description-diff-content";
+          content.setAttribute("aria-label", "Różnice opisu Apilo i kanału");
+          (diff.segments || []).forEach((segment) => {
+            const element = segment.kind === "missing"
+              ? document.createElement("del")
+              : segment.kind === "added"
+                ? document.createElement("ins")
+                : document.createElement("span");
+            element.className = `description-diff-segment ${segment.kind}`;
+            let value = segment.text;
+            if (segment.kind === "equal" && value.length > 300) {
+              value = `${value.slice(0, 145)} … ${value.slice(-145)}`;
+              element.classList.add("collapsed");
+            }
+            element.textContent = value;
+            content.appendChild(element);
+          });
+          panel.append(summary, legend, content);
+          if (diff.truncated) {
+            const warning = document.createElement("p");
+            warning.className = "description-diff-warning";
+            warning.textContent = "Bardzo długi opis został skrócony w podglądzie różnic.";
+            panel.appendChild(warning);
+          }
+          return panel;
+        };
+
+        const renderRepairs = (repairs) => {
+          repairList.replaceChildren();
+          const needed = repairs.filter((item) => item.needs_repair);
+          if (!needed.length) {
+            const empty = document.createElement("p");
+            empty.className = "description-repair-empty";
+            empty.textContent = "Brak wykrytych rozbieżności wymagających naprawy.";
+            repairList.appendChild(empty);
+            return;
+          }
+          needed.forEach((item) => {
+            const row = document.createElement("div");
+            row.className = "description-repair-item";
+            const info = document.createElement("div");
+            const heading = document.createElement("strong");
+            heading.textContent = `${item.channel_name} · oferta ${item.external_id}`;
+            const status = document.createElement("span");
+            status.className = `description-repair-status ${item.status}`;
+            status.textContent = item.status_label;
+            const paletteStatus = document.createElement("span");
+            paletteStatus.className = `description-repair-status palette ${item.palette_status}`;
+            paletteStatus.textContent = item.palette_status_label;
+            const paletteMismatchNote = document.createElement("span");
+            paletteMismatchNote.className = "description-repair-status palette-detail";
+            paletteMismatchNote.textContent = "Treść albo układ akapitów lub list różni się od sztywnego wzorca.";
+            paletteMismatchNote.hidden = true;
+            info.append(heading, status, paletteStatus, paletteMismatchNote);
+            const actions = document.createElement("div");
+            actions.className = "description-repair-actions";
+            let diffButton = null;
+            let diffPanel = null;
+            let paletteDiffButton = null;
+            let paletteDiffPanel = null;
+            const setDiff = (diff) => {
+              if (diffButton) diffButton.remove();
+              if (diffPanel) diffPanel.remove();
+              diffButton = null;
+              diffPanel = null;
+              if (!diff || !diff.available) return;
+              diffPanel = buildDiffPanel(diff);
+              diffButton = document.createElement("button");
+              diffButton.className = "btn outline compact description-diff-toggle";
+              diffButton.type = "button";
+              diffButton.textContent = "Pokaż różnice opisu";
+              diffButton.addEventListener("click", () => {
+                const willShow = diffPanel.hidden;
+                diffPanel.hidden = !willShow;
+                diffButton.textContent = willShow ? "Ukryj różnice opisu" : "Pokaż różnice opisu";
+              });
+              actions.prepend(diffButton);
+              row.appendChild(diffPanel);
+            };
+            const setPaletteDiff = (diff) => {
+              if (paletteDiffButton) paletteDiffButton.remove();
+              if (paletteDiffPanel) paletteDiffPanel.remove();
+              paletteDiffButton = null;
+              paletteDiffPanel = null;
+              paletteMismatchNote.hidden = !(
+                paletteStatus.classList.contains("mismatch")
+                && (!diff || !diff.available)
+              );
+              if (!diff || !diff.available) return;
+              paletteDiffPanel = buildDiffPanel(diff);
+              paletteDiffButton = document.createElement("button");
+              paletteDiffButton.className = "btn outline compact description-diff-toggle";
+              paletteDiffButton.type = "button";
+              paletteDiffButton.textContent = "Pokaż różnice kolorów";
+              paletteDiffButton.addEventListener("click", () => {
+                const willShow = paletteDiffPanel.hidden;
+                paletteDiffPanel.hidden = !willShow;
+                paletteDiffButton.textContent = willShow ? "Ukryj różnice kolorów" : "Pokaż różnice kolorów";
+              });
+              actions.prepend(paletteDiffButton);
+              row.appendChild(paletteDiffPanel);
+            };
+            if (item.public_url) {
+              const link = document.createElement("a");
+              link.className = "btn outline compact";
+              link.href = item.public_url;
+              link.target = "_blank";
+              link.rel = "noreferrer";
+              link.textContent = "Otwórz ofertę";
+              actions.appendChild(link);
+            }
+            if (item.write_supported) {
+              const updateButton = document.createElement("button");
+              updateButton.className = "btn primary compact";
+              updateButton.type = "button";
+              updateButton.textContent = "Aktualizuj na Allegro";
+              updateButton.addEventListener("click", async () => {
+                const confirmed = window.confirm(
+                  `Zastąpić główny opis oferty ${item.external_id} wzorcem Apilo? Zdjęcia i pozostałe sekcje zostaną zachowane.`
+                );
+                if (!confirmed) return;
+                updateButton.disabled = true;
+                updateButton.textContent = "Aktualizuję…";
+                const body = new FormData();
+                body.set("csrf_token", dialog.dataset.csrfToken);
+                body.set("apilo_product_id", currentProductId);
+                body.set("external_id", item.external_id);
+                body.set("reference_hash", currentReferenceHash);
+                try {
+                  const response = await fetch(dialog.dataset.allegroUpdateUrl, {
+                    method: "POST",
+                    body,
+                    headers: {"Accept": "application/json"},
+                  });
+                  const result = await response.json().catch(() => ({}));
+                  if (!response.ok) {
+                    throw new Error(result.error || "Nie udało się zaktualizować opisu Allegro.");
+                  }
+                  status.className = `description-repair-status ${result.status}`;
+                  status.textContent = result.status_label;
+                  paletteStatus.className = `description-repair-status palette ${result.palette_status}`;
+                  paletteStatus.textContent = result.palette_status_label;
+                  updateButton.textContent = "Opis zaktualizowany";
+                  setDiff(null);
+                  setPaletteDiff(result.palette_diff);
+                  if (result.is_match) row.classList.add("repaired");
+                  showMessage(result.message, "success");
+                  window.setTimeout(() => window.location.reload(), 900);
+                } catch (error) {
+                  updateButton.disabled = false;
+                  updateButton.textContent = "Aktualizuj na Allegro";
+                  showMessage(error.message || "Nie udało się zaktualizować opisu Allegro.", "error");
+                }
+              });
+              actions.appendChild(updateButton);
+            }
+            if (item.palette_write_supported) {
+              const paletteUpdateButton = document.createElement("button");
+              paletteUpdateButton.className = "btn primary compact";
+              paletteUpdateButton.type = "button";
+              paletteUpdateButton.textContent = "Aktualizuj materiał i kolory";
+              paletteUpdateButton.addEventListener("click", async () => {
+                const material = item.expected_palette_material || item.palette_material || "PLA/PETG";
+                const isErli = item.channel_key === "erli";
+                const confirmation = isErli
+                  ? `Zastąpić blok materiału i kolorów produktu ERLI ${item.external_id} wzorcem ${material}? Główny opis, zdjęcia i sekcja firmy zostaną zachowane. ERLI przetwarza zmianę asynchronicznie, dlatego panel zaczeka na odczyt kontrolny.`
+                  : `Zastąpić blok materiału i kolorów oferty ${item.external_id} wzorcem ${material}? Główny opis, zdjęcia i sekcja firmy zostaną zachowane. Stare parametry niezgodne z przypisanym produktem zostaną wyrównane do katalogu Allegro.`;
+                const confirmed = window.confirm(
+                  confirmation
+                );
+                if (!confirmed) return;
+                paletteUpdateButton.disabled = true;
+                paletteUpdateButton.textContent = "Aktualizuję…";
+                const body = new FormData();
+                body.set("csrf_token", dialog.dataset.csrfToken);
+                body.set("apilo_product_id", currentProductId);
+                body.set("external_id", item.external_id);
+                body.set("reference_hash", currentReferenceHash);
+                try {
+                  const updateUrl = isErli
+                    ? dialog.dataset.erliPaletteUpdateUrl
+                    : dialog.dataset.allegroPaletteUpdateUrl;
+                  const response = await fetch(updateUrl, {
+                    method: "POST",
+                    body,
+                    headers: {"Accept": "application/json"},
+                  });
+                  const result = await response.json().catch(() => ({}));
+                  if (!response.ok) {
+                    throw new Error(result.error || `Nie udało się zaktualizować materiału i kolorów ${item.channel_name}.`);
+                  }
+                  status.className = `description-repair-status ${result.status}`;
+                  status.textContent = result.status_label;
+                  paletteStatus.className = `description-repair-status palette ${result.palette_status}`;
+                  paletteStatus.textContent = result.palette_status_label;
+                  paletteUpdateButton.textContent = "Materiał i kolory zaktualizowane";
+                  setPaletteDiff(null);
+                  if (result.is_match) row.classList.add("repaired");
+                  showMessage(result.message, "success");
+                  window.setTimeout(() => window.location.reload(), 900);
+                } catch (error) {
+                  paletteUpdateButton.disabled = false;
+                  paletteUpdateButton.textContent = "Aktualizuj materiał i kolory";
+                  showMessage(error.message || `Nie udało się zaktualizować materiału i kolorów ${item.channel_name}.`, "error");
+                }
+              });
+              actions.appendChild(paletteUpdateButton);
+            }
+            if (item.recheck_supported) {
+              const button = document.createElement("button");
+              button.className = "btn compact";
+              button.type = "button";
+              button.textContent = "Sprawdź ponownie";
+              button.addEventListener("click", async () => {
+                button.disabled = true;
+                button.textContent = "Sprawdzam…";
+                const body = new FormData();
+                body.set("csrf_token", dialog.dataset.csrfToken);
+                body.set("apilo_product_id", currentProductId);
+                body.set("channel_key", item.channel_key);
+                body.set("external_id", item.external_id);
+                try {
+                  const response = await fetch(dialog.dataset.recheckUrl, {
+                    method: "POST",
+                    body,
+                    headers: {"Accept": "application/json"},
+                  });
+                  if (!response.ok) throw new Error("recheck_failed");
+                  const result = await response.json();
+                  status.className = `description-repair-status ${result.status}`;
+                  status.textContent = result.status_label;
+                  paletteStatus.className = `description-repair-status palette ${result.palette_status}`;
+                  paletteStatus.textContent = result.palette_status_label;
+                  if (result.is_match) {
+                    row.classList.add("repaired");
+                    button.textContent = "Naprawione";
+                    setDiff(null);
+                    setPaletteDiff(null);
+                    showMessage(`${item.channel_name}: opis i blok kolorów są zgodne.`, "success");
+                  } else {
+                    button.disabled = false;
+                    button.textContent = "Sprawdź ponownie";
+                    setDiff(result.diff);
+                    setPaletteDiff(result.palette_diff);
+                    showMessage(`${item.channel_name}: ${result.status_label.toLowerCase()}, ${result.palette_status_label.toLowerCase()}.`, "error");
+                  }
+                } catch (error) {
+                  button.disabled = false;
+                  button.textContent = "Sprawdź ponownie";
+                  showMessage("Nie udało się ponownie sprawdzić oferty.", "error");
+                }
+              });
+              actions.appendChild(button);
+            }
+            row.append(info, actions);
+            setDiff(item.diff);
+            setPaletteDiff(item.palette_diff);
+            repairList.appendChild(row);
+          });
+        };
+
+        document.addEventListener("click", async (event) => {
+          const trigger = event.target.closest("[data-description-url]");
+          if (!trigger) return;
+          title.textContent = "Podgląd opisu";
+          meta.textContent = "";
+          text.textContent = "Ładowanie opisu…";
+          repairList.replaceChildren();
+          showMessage("");
+          descriptionText = "";
+          descriptionHtml = "";
+          currentReferenceHash = "";
+          copyTextButton.disabled = true;
+          copyHtmlButton.disabled = true;
+          openApilo.removeAttribute("href");
+          if (typeof dialog.showModal === "function") dialog.showModal();
+          else dialog.setAttribute("open", "");
+          try {
+            const response = await fetch(trigger.dataset.descriptionUrl, {
+              headers: {"Accept": "application/json"},
+            });
+            if (!response.ok) throw new Error("description_failed");
+            const data = await response.json();
+            currentProductId = String(data.apilo_product_id);
+            currentReferenceHash = String(data.reference_hash || "");
+            descriptionText = data.description_preview;
+            descriptionHtml = data.description_html;
+            title.textContent = data.name;
+            meta.textContent = data.ean ? `EAN: ${data.ean}` : "";
+            text.textContent = descriptionText;
+            openApilo.href = data.apilo_url;
+            copyTextButton.disabled = false;
+            copyHtmlButton.disabled = false;
+            renderRepairs(data.repairs || []);
+          } catch (error) {
+            text.textContent = "Nie udało się pobrać opisu Apilo.";
+            showMessage("Odśwież stronę i spróbuj ponownie.", "error");
+          }
+        });
+
+        copyTextButton.addEventListener("click", () => copyValue(descriptionText, "Tekst"));
+        copyHtmlButton.addEventListener("click", () => copyValue(descriptionHtml, "HTML"));
+        dialog.querySelector(".description-dialog-close").addEventListener("click", () => dialog.close());
+        dialog.addEventListener("click", (event) => {
+          if (event.target === dialog) dialog.close();
+        });
+      })();
+    </script>
+  </body>
+</html>

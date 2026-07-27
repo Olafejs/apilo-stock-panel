@@ -1,0 +1,40 @@
+name: Feature request
+description: Propozycja nowej funkcji lub usprawnienia
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem biznesowy
+      description: Jaki problem ma rozwiązać ta funkcja?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proponowane rozwiązanie
+      description: Opisz oczekiwane zachowanie.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatywy
+      description: Jeśli były rozważane inne opcje, wpisz je tutaj.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Obszar aplikacji
+      options:
+        - Produkty / magazyn
+        - Synchronizacja
+        - Raporty
+        - Alerty
+        - UI / UX
+        - Bezpieczeństwo
+        - Deployment
+        - Inne
+    validations:
+      required: true

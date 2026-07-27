@@ -1,0 +1,17 @@
+[Unit]
+Description=Apilo Panel
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/apilo-panel
+ExecStart=/opt/apilo-panel/.venv/bin/gunicorn -c /opt/apilo-panel/gunicorn.conf.py app:app
+Restart=always
+Environment=PYTHONUNBUFFERED=1
+Environment=APP_HOST=127.0.0.1
+Environment=APP_PORT=5000
+Environment=APP_THREADS=4
+Environment=APP_TIMEOUT=120
+
+[Install]
+WantedBy=multi-user.target

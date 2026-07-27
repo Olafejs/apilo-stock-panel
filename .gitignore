@@ -1,0 +1,63 @@
+# Python cache and build artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+
+# Local environments and secrets
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+settings.key
+
+# Runtime and generated data
+data/
+logs/
+backups/
+exports/
+uploads/
+static/thumbs/
+*.log
+*.sqlite
+*.sqlite3
+*.db
+*.csv
+*.xlsx
+*.jsonl
+
+# Host-specific overrides and temporary copies
+docker-compose.override.yml
+compose.override.yml
+*.before-*
+*.bak
+*.backup
+*.dump
+*.tmp
+
+# Security scanner output
+.gitleaks-report*
+gitleaks-report*
+
+# OS and editor files
+.DS_Store
+.idea/
+.vscode/
+*.swp

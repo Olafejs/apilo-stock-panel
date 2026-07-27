@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+python3 scripts/public_repo_guard.py
+python3 scripts/check_release.py

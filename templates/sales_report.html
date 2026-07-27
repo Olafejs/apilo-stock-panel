@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8">
+    <title>{{ project_name }} - Raport sprzedaży</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="{{ project_description }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  </head>
+  <body>
+    <main class="container">
+    <header class="topbar">
+      <div>
+        <h1>Raport sprzedaży</h1>
+        <p class="subtle">
+          {{ project_name }} · ostatnie {{ days }} dni ·
+          {% if realized_only %}
+            opłacone{% if realized_filter %} i zrealizowane{% else %} (fallback do wszystkich opłaconych){% endif %}
+          {% else %}
+            wszystkie opłacone
+          {% endif %}
+        </p>
+      </div>
+      <div class="actions">
+        <a class="btn" href="{{ url_for('index') }}">Powrót</a>
+      </div>
+    </header>
+
+    <section class="filters">
+      <form method="get" action="{{ url_for('sales_report') }}" class="inline">
+        <label class="select-label">
+          Zakres (dni)
+          <select name="days" onchange="this.form.submit()">
+            <option value="7" {% if days == 7 %}selected{% endif %}>7</option>
+            <option value="14" {% if days == 14 %}selected{% endif %}>14</option>
+            <option value="30" {% if days == 30 %}selected{% endif %}>30</option>
+            <option value="60" {% if days == 60 %}selected{% endif %}>60</option>
+            <option value="90" {% if days == 90 %}selected{% endif %}>90</option>
+            <option value="180" {% if days == 180 %}selected{% endif %}>180</option>
+            <option value="365" {% if days == 365 %}selected{% endif %}>365</option>
+          </select>
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" name="realized" value="1" {% if realized_only %}checked{% endif %}>
+          <span>Tylko zrealizowane</span>
+        </label>
+        <button class="btn" type="submit">Pokaż</button>
+        <a class="btn" href="{{ url_for('sales_report', days=days, realized=1 if realized_only else 0, export=1) }}">Pobierz CSV</a>
+      </form>
+      <div class="hint">Zakres od: {{ updated_after }}</div>
+      <div class="hint">Zamówienia: {{ orders_used }} / {{ orders_total }}</div>
+    </section>
+
+    <section class="table-wrap" role="region" aria-label="Tabela raportu sprzedaży" tabindex="0">
+      {% if realized_only and not realized_filter %}
+        <div class="message info">Nie znaleziono statusu „zrealizowane”. Pokazuję wszystkie opłacone zamówienia.</div>
+      {% endif %}
+      <table>
+        <thead>
+          <tr>
+            <th>EAN</th>
+            <th>Nazwa</th>
+            <th>Sprzedane</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          <tr>
+            <td>{{ row.ean }}</td>
+            <td>{{ row.name or "-" }}</td>
+            <td class="qty">{{ row.quantity }}</td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="3" class="empty">Brak danych w wybranym okresie.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+    </main>
+  </body>
+</html>

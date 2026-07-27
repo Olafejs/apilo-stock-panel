@@ -1,0 +1,485 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8">
+    <title>{{ project_name }} - Stany magazynowe</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="{{ project_description }}">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  </head>
+  <body>
+    <main class="container">
+    <header class="topbar">
+      <div>
+        <h1>{{ project_name }}</h1>
+        <p class="subtle">{{ project_description }}</p>
+      </div>
+      <div class="actions">
+        <a class="btn" href="{{ url_for('sales_channels') }}">Kanały sprzedaży</a>
+        <a class="btn" href="{{ url_for('settings') }}">Ustawienia</a>
+        <form method="get" action="{{ url_for('sales_report') }}">
+          <button class="btn" type="submit">Raport sprzedaży</button>
+        </form>
+        <form method="post" action="{{ url_for('sync_pull') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn" type="submit">Pobierz z Apilo</button>
+        </form>
+        <div
+          class="refresh-chip sync-chip"
+          id="sync-status"
+          role="status"
+          aria-live="polite"
+          data-status-url="{{ url_for('sync_status') }}"
+          data-next-inventory-sync-at="{{ sync_status.next_inventory_sync_at }}"
+          data-next-sales-refresh-at="{{ sync_status.next_sales_refresh_at }}"
+        >
+          Magazyn: <strong id="last-refresh">{{ sync_status.last_inventory_sync_at or '-' }}</strong>
+          <span class="divider">·</span>
+          Sugestie: <strong id="sales-refresh">{{ sync_status.last_sales_refresh_at or '-' }}</strong>
+          <span class="divider">·</span>
+          <span
+            class="sync-state{% if sync_status.running %} running{% elif sync_status.last_error %} error{% endif %}"
+            id="sync-state"
+          >{{ sync_status.state_label }}</span>
+          <span class="divider">·</span>
+          Magazyn za <strong id="inventory-refresh-count">-</strong>s
+          <span class="divider">·</span>
+          Sugestie za <strong id="sales-refresh-count">-</strong>s
+        </div>
+        <form method="post" action="{{ url_for('logout') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn" type="submit">Wyloguj</button>
+        </form>
+      </div>
+    </header>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <section class="messages" aria-live="polite">
+          {% for category, message in messages %}
+            <div class="message {{ category }}"{% if category == 'error' %} role="alert"{% else %} role="status"{% endif %}>{{ message }}</div>
+          {% endfor %}
+        </section>
+      {% endif %}
+    {% endwith %}
+
+    <section class="dashboard">
+      <a class="metric-card{% if preset == 'shortage' %} active{% endif %}" href="{{ url_for('index', search=search, material=material_filter, color=color_filter, preset='shortage', sort='shortage', order='desc', limit=limit, page=1) }}">
+        <span class="metric-label">Braki</span>
+        <strong class="metric-value">{{ dashboard.shortage_count or 0 }}</strong>
+        <span class="metric-subtle">{{ dashboard.shortage_units or 0 }} szt. do uzupełnienia</span>
+      </a>
+      <a class="metric-card{% if preset == 'out_of_stock' %} active{% endif %}" href="{{ url_for('index', search=search, material=material_filter, color=color_filter, preset='out_of_stock', sort='name', order='asc', limit=limit, page=1) }}">
+        <span class="metric-label">Zero stanu</span>
+        <strong class="metric-value">{{ dashboard.out_of_stock_count or 0 }}</strong>
+        <span class="metric-subtle">produkty bez dostępnego stanu</span>
+      </a>
+      <a class="metric-card{% if preset == 'no_sales' %} active{% endif %}" href="{{ url_for('index', search=search, material=material_filter, color=color_filter, preset='no_sales', sort='sales_year', order='asc', limit=limit, page=1) }}">
+        <span class="metric-label">Bez sprzedaży</span>
+        <strong class="metric-value">{{ dashboard.no_sales_count or 0 }}</strong>
+        <span class="metric-subtle">brak ruchu w ostatnich 12 mies.</span>
+      </a>
+      <a class="metric-card metric-card-accent{% if preset == 'high_value' %} active{% endif %}" href="{{ url_for('index', search=search, material=material_filter, color=color_filter, preset='high_value', sort='stock_value', order='desc', limit=limit, page=1) }}">
+        <span class="metric-label">Wartość magazynu</span>
+        <strong class="metric-value">{{ dashboard.inventory_value | pln }}</strong>
+        <span class="metric-subtle">{{ dashboard.high_value_count or 0 }} produktów z dodatnią wartością</span>
+      </a>
+    </section>
+
+    <section class="preset-bar">
+      {% for option in preset_options %}
+        <a
+          class="filter-pill{% if preset == option.id %} active{% endif %}"
+          href="{{ url_for('index', search=search, material=material_filter, color=color_filter, preset=option.id, sort=option.sort, order=option.order, limit=limit, page=1) }}"
+        >
+          {{ option.label }}
+          <span>{{ option.count }}</span>
+        </a>
+      {% endfor %}
+    </section>
+
+    <section class="attribute-filter-bar">
+      <div class="filter-group">
+        <span class="filter-label">Materiał</span>
+        <a class="filter-pill{% if not material_filter %} active{% endif %}" href="{{ url_for('index', search=search, color=color_filter, preset=preset, sort=sort, order=order, limit=limit, page=1) }}">Wszystkie</a>
+        {% for option in attribute_filter_counts.materials %}
+          {% if option.value in ['PLA', 'PLA+', 'PETG', 'FLEX', 'CARBON'] %}
+            <a class="filter-pill{% if material_filter == option.value %} active{% endif %}" href="{{ url_for('index', search=search, material=option.value, color=color_filter, preset=preset, sort=sort, order=order, limit=limit, page=1) }}">
+              {{ option.value }}
+              <span>{{ option.count }}</span>
+            </a>
+          {% endif %}
+        {% endfor %}
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">Kolor</span>
+        <a class="filter-pill{% if not color_filter %} active{% endif %}" href="{{ url_for('index', search=search, material=material_filter, preset=preset, sort=sort, order=order, limit=limit, page=1) }}">Wszystkie</a>
+        {% for option in attribute_filter_counts.colors %}
+          <a class="filter-pill color-filter{% if color_filter == option.value %} active{% endif %}" style="{{ color_badge_style(option.value) }}" href="{{ url_for('index', search=search, material=material_filter, color=option.value, preset=preset, sort=sort, order=order, limit=limit, page=1) }}">
+            {{ option.value }}
+            <span>{{ option.count }}</span>
+          </a>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="filters">
+      <form method="get" action="{{ url_for('index') }}">
+        <input type="hidden" name="preset" value="{{ preset }}">
+        <input type="hidden" name="material" value="{{ material_filter }}">
+        <input type="hidden" name="color" value="{{ color_filter }}">
+        <input type="text" name="search" placeholder="Szukaj po SKU, nazwie, kodzie, materiale lub kolorze" value="{{ search }}">
+        <input type="hidden" name="sort" value="{{ sort }}">
+        <input type="hidden" name="order" value="{{ order }}">
+        <input type="hidden" name="limit" value="{{ limit }}">
+        <button class="btn" type="submit">Szukaj</button>
+        <a class="btn outline" href="{{ url_for('index', limit=limit, page=1) }}">Wyczyść filtry</a>
+      </form>
+      <div class="actions">
+        <a
+          class="btn outline"
+          href="{{ url_for('index', search=search, material=material_filter, color=color_filter, preset=preset, sort=sort, order=order, export=1) }}"
+        >Eksport CSV</a>
+        <div class="hint">Widok: {{ preset_label }} · Wyniki: {{ total_count }}</div>
+      </div>
+    </section>
+
+    <section class="table-wrap">
+      <table class="inventory-table">
+        <thead>
+          <tr>
+            <th>
+              <a class="sort-link" href="{{ url_for('index', search=search, material=material_filter, color=color_filter, preset=preset, sort='name', order='desc' if sort == 'name' and order == 'asc' else 'asc', limit=limit, page=1) }}">
+                Nazwa
+                <span class="sort-indicator">
+                  {% if sort == 'name' %}{{ '▲' if order == 'asc' else '▼' }}{% endif %}
+                </span>
+              </a>
+            </th>
+            <th>
+              <a class="sort-link" href="{{ url_for('index', search=search, material=material_filter, color=color_filter, preset=preset, sort='quantity', order='desc' if sort == 'quantity' and order == 'asc' else 'asc', limit=limit, page=1) }}">
+                Stan
+                <span class="sort-indicator">
+                  {% if sort == 'quantity' %}{{ '▲' if order == 'asc' else '▼' }}{% endif %}
+                </span>
+              </a>
+            </th>
+            <th>
+              <a class="sort-link" href="{{ url_for('index', search=search, material=material_filter, color=color_filter, preset=preset, sort='shortage', order='desc' if sort == 'shortage' and order == 'asc' else 'asc', limit=limit, page=1) }}">
+                Sug. stan
+                <span class="sort-indicator">
+                  {% if sort == 'shortage' %}{{ '▲' if order == 'asc' else '▼' }}{% endif %}
+                </span>
+              </a>
+            </th>
+            <th>Akcje</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for product in products %}
+          <tr class="product-row">
+            <td class="primary-cell" data-label="Produkt">
+              <div class="product-cell">
+                {% if product["image_url"] %}
+                  <span class="thumb-wrap">
+                    <img
+                      class="thumb"
+                      src="{{ url_for('thumb', apilo_id=product['apilo_id'], v=thumb_version(product['image_url'])) }}"
+                      alt="{{ product['name'] or 'Miniatura produktu' }}"
+                      loading="eager"
+                    >
+                  </span>
+                {% endif %}
+                <div>
+                  <div class="name">{{ product["name"] or "-" }}</div>
+                  <div class="meta">
+                    Apilo ID:
+                    {% if product["apilo_id"] %}
+                      <a class="meta-link" href="{{ product_detail_base_url }}/warehouse/product/detail/{{ product['apilo_id'] }}/" target="_blank" rel="noreferrer">{{ product["apilo_id"] }}</a>
+                    {% else %}
+                      -
+                    {% endif %}
+                    · EAN: {{ product["ean"] or "-" }}
+                    · Allegro ID:
+                    {% if product["allegro_auction_id"] %}
+                      <a class="meta-link" href="https://allegro.pl/oferta/{{ product['allegro_auction_id'] }}" target="_blank" rel="noreferrer">{{ product["allegro_auction_id"] }}</a>
+                    {% else %}
+                      -
+                    {% endif %}
+                  </div>
+                  <div class="product-badges">
+                    <span class="stat-badge">Roczna sprzedaż: <strong>{{ product["quantity_year"] or 0 }}</strong></span>
+                    <span class="stat-badge">Wartość stanu: <strong>{{ product["stock_value"] | pln }}</strong></span>
+                    {% if product["material"] %}
+                      <span class="stat-badge attribute">Materiał: <strong>{{ product["material"] }}</strong></span>
+                    {% endif %}
+                    {% if product["color"] %}
+                      <span class="stat-badge color-badge" style="{{ color_badge_style(product['color']) }}">Kolor: <strong>{{ product["color"] }}</strong></span>
+                    {% endif %}
+                    {% if not product["material"] or not product["color"] %}
+                      <span class="stat-badge warning">Brak materiału/koloru</span>
+                    {% endif %}
+                    {% if not product["ean"] %}
+                      <span class="stat-badge warning">Brak EAN</span>
+                    {% endif %}
+                    {% if not product["image_url"] %}
+                      <span class="stat-badge warning">Brak zdjęcia</span>
+                    {% endif %}
+                  </div>
+                </div>
+              </div>
+            </td>
+            <td class="qty" data-label="Stan">{{ product["quantity"] if product["quantity"] is not none else "-" }}</td>
+            {% set qty_num = product["quantity"] if product["quantity"] is not none else 0 %}
+            {% set suggested = suggestions.get(product["ean"]) if product["ean"] else none %}
+            {% if suggested is not none %}
+              {% set sugg_class = "sugg-ok" if qty_num >= suggested else "sugg-low" %}
+              <td class="qty subtle" data-label="Sug. stan">
+                <button type="button" class="sugg-pill {{ sugg_class }} toggle-details" data-target="details-{{ product['id'] }}" aria-controls="details-{{ product['id'] }}" aria-expanded="false">
+                  {{ suggested }}
+                </button>
+              </td>
+            {% else %}
+              <td class="qty subtle" data-label="Sug. stan">-</td>
+            {% endif %}
+            <td class="actions-cell" data-label="Akcje">
+              <div class="product-actions">
+                <form method="post" action="{{ url_for('update_quantity', product_id=product['id']) }}" class="inline quantity-form">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="next" value="{{ request.full_path }}">
+                  <input type="hidden" name="expected_quantity" value="{{ qty_num }}">
+                  <input type="number" name="quantity" min="0" step="1" value="{{ qty_num }}" aria-label="Stan magazynowy dla {{ product['name'] or ('ID ' ~ product['id']) }}">
+                  <button class="btn" type="submit">Zapisz</button>
+                </form>
+                <details class="attribute-editor">
+                  <summary class="btn small outline">Edytuj dane</summary>
+                  <form method="post" action="{{ url_for('update_product_attributes_route', product_id=product['id']) }}" class="attribute-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="next" value="{{ request.full_path }}">
+                    <label>
+                      Materiał
+                      <select name="material" aria-label="Materiał dla {{ product['name'] or ('ID ' ~ product['id']) }}">
+                        <option value="" {% if not product['material'] %}selected{% endif %}>Brak</option>
+                        {% for material_option in ['PLA', 'PLA+', 'PETG', 'FLEX', 'CARBON'] %}
+                          <option value="{{ material_option }}" {% if product['material'] == material_option %}selected{% endif %}>{{ material_option }}</option>
+                        {% endfor %}
+                      </select>
+                    </label>
+                    <label>
+                      Kolor
+                      <input type="text" name="color" maxlength="50" value="{{ product['color'] or '' }}" placeholder="np. czarny" aria-label="Kolor dla {{ product['name'] or ('ID ' ~ product['id']) }}">
+                    </label>
+                    <button class="btn" type="submit">Zapisz dane</button>
+                    {% if product['attributes_source'] == 'manual_user_hint' %}
+                      <span class="hint">Dane ręczne, chronione przed automatycznym nadpisaniem.</span>
+                    {% endif %}
+                  </form>
+                </details>
+              </div>
+            </td>
+          </tr>
+          <tr id="details-{{ product['id'] }}" class="details-row">
+            <td colspan="4">
+              {% set year = year_summary.get(product["ean"]) if product["ean"] else none %}
+              {% set base_price = product["price_with_tax"] %}
+              {% set allegro_price = product["allegro_price_with_tax"] %}
+              {% set base_price_num = base_price|float if base_price else none %}
+              {% set allegro_price_num = allegro_price|float if allegro_price else none %}
+              {% set sold_qty = year.quantity if year else 0 %}
+              {% set sold_value = (sold_qty * allegro_price_num) if allegro_price_num is not none else (sold_qty * base_price_num if base_price_num is not none else none) %}
+              {% set stock_value = (qty_num * allegro_price_num) if allegro_price_num is not none else (qty_num * base_price_num if base_price_num is not none else none) %}
+              {% if product["ean"] and (suggest_details.get(product["ean"]) or year) %}
+                <div class="details-panel">
+                  <div class="details-title">Zamówienia (data, ilość)</div>
+                  {% if year %}
+                    <div class="details-summary">
+                      Ostatnie 12 mies.: <strong>{{ year.orders }}</strong> zamówień, <strong>{{ year.quantity }}</strong> sprzedanych sztuk.
+                    </div>
+                  {% endif %}
+                  <div class="details-stats">
+                    <div>Cena sklepowa: <strong>{{ base_price | pln }}</strong></div>
+                    <div>Cena Allegro: <strong>{{ allegro_price | pln }}</strong></div>
+                    <div>Wartość sprzedaży (12 mies.): <strong>{{ sold_value | pln }}</strong></div>
+                    <div>Wartość magazynu: <strong>{{ stock_value | pln }}</strong></div>
+                  </div>
+                  {% if suggest_details.get(product["ean"]) %}
+                    <table class="details-table">
+                      <thead>
+                        <tr>
+                          <th>Data</th>
+                          <th>Ilość</th>
+                          <th>Link</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {% for item in suggest_details.get(product["ean"]) %}
+                        <tr>
+                        <td>{{ item.date | date_pl }}</td>
+                          <td class="qty">{{ item.qty }}</td>
+                          <td><a href="{{ item.url }}" target="_blank" rel="noreferrer">Apilo</a></td>
+                        </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  {% else %}
+                    <div class="details-empty">Brak szczegółowej listy zamówień dla tego EAN.</div>
+                  {% endif %}
+                </div>
+              {% else %}
+                <div class="details-panel empty">Brak danych sprzedaży dla tego EAN.</div>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="4" class="empty">Brak produktów. Pobierz dane z Apilo.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div class="table-controls bottom">
+        <form method="get" action="{{ url_for('index') }}" class="inline">
+          <input type="hidden" name="search" value="{{ search }}">
+          <input type="hidden" name="material" value="{{ material_filter }}">
+          <input type="hidden" name="color" value="{{ color_filter }}">
+          <input type="hidden" name="preset" value="{{ preset }}">
+          <input type="hidden" name="sort" value="{{ sort }}">
+          <input type="hidden" name="order" value="{{ order }}">
+          <label class="select-label">
+            Na stronie
+            <select name="limit" onchange="this.form.submit()">
+              <option value="25" {% if limit == 25 %}selected{% endif %}>25</option>
+              <option value="50" {% if limit == 50 %}selected{% endif %}>50</option>
+              <option value="100" {% if limit == 100 %}selected{% endif %}>100</option>
+              <option value="200" {% if limit == 200 %}selected{% endif %}>200</option>
+            </select>
+          </label>
+        </form>
+        <div class="pagination">
+          <span class="page-info">Strona {{ page }} z {{ total_pages }}</span>
+          {% if total_pages > 1 %}
+          <div class="page-links">
+            <a class="btn outline" aria-label="Pierwsza strona" href="{{ url_for('index', search=search, material=material_filter, color=color_filter, preset=preset, sort=sort, order=order, limit=limit, page=1) }}">1</a>
+            <a class="btn outline" aria-label="Poprzednia strona" href="{{ url_for('index', search=search, material=material_filter, color=color_filter, preset=preset, sort=sort, order=order, limit=limit, page=page-1 if page > 1 else 1) }}">‹</a>
+            <a class="btn outline" aria-label="Następna strona" href="{{ url_for('index', search=search, material=material_filter, color=color_filter, preset=preset, sort=sort, order=order, limit=limit, page=page+1 if page < total_pages else total_pages) }}">›</a>
+            <a class="btn outline" aria-label="Ostatnia strona" href="{{ url_for('index', search=search, material=material_filter, color=color_filter, preset=preset, sort=sort, order=order, limit=limit, page=total_pages) }}">{{ total_pages }}</a>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </section>
+    <footer class="footer">
+      Apilo Stock Panel · <a href="https://github.com/Olafejs/apilo-stock-panel" target="_blank" rel="noreferrer">kod źródłowy</a> · Wersja {{ app_version }}
+    </footer>
+    </main>
+    <script>
+      (function () {
+        var root = document.getElementById("sync-status");
+        if (!root) {
+          return;
+        }
+        var lastRefreshEl = document.getElementById("last-refresh");
+        var salesRefreshEl = document.getElementById("sales-refresh");
+        var inventoryCountdownEl = document.getElementById("inventory-refresh-count");
+        var salesCountdownEl = document.getElementById("sales-refresh-count");
+        var stateEl = document.getElementById("sync-state");
+        var statusUrl = root.dataset.statusUrl;
+        var nextInventorySyncAt = root.dataset.nextInventorySyncAt || "";
+        var nextSalesRefreshAt = root.dataset.nextSalesRefreshAt || "";
+        var secondsUntil = function (isoValue) {
+          if (!isoValue) {
+            return "-";
+          }
+          var parsed = Date.parse(isoValue);
+          if (Number.isNaN(parsed)) {
+            return "-";
+          }
+          var diff = Math.ceil((parsed - Date.now()) / 1000);
+          return String(Math.max(diff, 0));
+        };
+        var renderCountdowns = function () {
+          inventoryCountdownEl.textContent = secondsUntil(nextInventorySyncAt);
+          salesCountdownEl.textContent = secondsUntil(nextSalesRefreshAt);
+        };
+        var applyStatus = function (payload) {
+          if (!payload) {
+            return;
+          }
+          nextInventorySyncAt = payload.next_inventory_sync_at || "";
+          nextSalesRefreshAt = payload.next_sales_refresh_at || "";
+          lastRefreshEl.textContent = payload.last_inventory_sync_at || "-";
+          salesRefreshEl.textContent = payload.last_sales_refresh_at || "-";
+          stateEl.textContent = payload.state_label || "Auto-sync aktywny";
+          stateEl.className = "sync-state";
+          if (payload.running) {
+            stateEl.classList.add("running");
+          } else if (payload.last_error) {
+            stateEl.classList.add("error");
+          }
+          renderCountdowns();
+        };
+        var pollStatus = function () {
+          fetch(statusUrl, {
+            headers: { "Accept": "application/json" },
+            cache: "no-store"
+          })
+            .then(function (response) {
+              if (!response.ok) {
+                throw new Error("status");
+              }
+              return response.json();
+            })
+            .then(applyStatus)
+            .catch(function () {
+              stateEl.textContent = "Brak odświeżenia statusu";
+              stateEl.className = "sync-state error";
+            });
+        };
+        renderCountdowns();
+        setInterval(renderCountdowns, 1000);
+        setInterval(pollStatus, 15000);
+      })();
+      (function () {
+        document.querySelectorAll(".quantity-form").forEach(function (form) {
+          var input = form.querySelector('input[name="quantity"]');
+          var button = form.querySelector('button[type="submit"]');
+          if (!input || !button) {
+            return;
+          }
+          var originalValue = input.value;
+          var updateButton = function () {
+            button.disabled = input.value === originalValue || !input.checkValidity();
+          };
+          input.addEventListener("input", updateButton);
+          updateButton();
+        });
+      })();
+      (function () {
+        var buttons = document.querySelectorAll(".toggle-details");
+        buttons.forEach(function (btn) {
+          btn.setAttribute("aria-expanded", "false");
+          btn.addEventListener("click", function () {
+            var targetId = btn.getAttribute("data-target");
+            var row = document.getElementById(targetId);
+            if (!row) {
+              return;
+            }
+            document.querySelectorAll(".details-row").forEach(function (item) {
+              if (item.id !== targetId) {
+                item.classList.remove("open");
+              }
+            });
+            buttons.forEach(function (otherBtn) {
+              if (otherBtn !== btn) {
+                otherBtn.setAttribute("aria-expanded", "false");
+              }
+            });
+            var isOpen = row.classList.toggle("open");
+            btn.setAttribute("aria-expanded", isOpen ? "true" : "false");
+          });
+        });
+      })();
+    </script>
+  </body>
+</html>

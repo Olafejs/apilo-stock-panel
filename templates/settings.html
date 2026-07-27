@@ -1,0 +1,637 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8">
+    <title>{{ project_name }} - Ustawienia</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="{{ project_description }}">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  </head>
+  <body>
+    <main class="container">
+      <header class="topbar">
+        <div>
+          <h1>Ustawienia</h1>
+          <p class="subtle">{{ project_name }} · konfiguracja panelu i integracji</p>
+        </div>
+        <div class="actions">
+          <a class="btn" href="{{ url_for('index') }}">Magazyn</a>
+          <a class="btn" href="{{ url_for('sales_channels') }}">Kanały sprzedaży</a>
+          <form method="post" action="{{ url_for('logout') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn" type="submit">Wyloguj</button>
+          </form>
+        </div>
+      </header>
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <section class="messages">
+            {% for category, message in messages %}
+              <div class="message {{ category }}">{{ message }}</div>
+            {% endfor %}
+          </section>
+        {% endif %}
+      {% endwith %}
+
+      <section class="table-wrap settings-grid settings-clean">
+        {% if required %}
+          <div class="message error full">
+            Brak tokenów Apilo. Wprowadź je, aby system mógł działać.
+          </div>
+        {% endif %}
+
+        <div class="settings-break full">
+          <h2>Połączenie z Apilo</h2>
+          <p>Najpierw skonfiguruj API Apilo, potem ustawienia Allegro.</p>
+        </div>
+
+        <div class="card full">
+          <div class="card-head">
+            <div>
+              <h2>Dane API Apilo</h2>
+              <p class="card-desc">Wpisz dane aplikacji REST API z panelu Apilo i pobierz token.</p>
+            </div>
+            <div class="status-row">
+              <span class="status {{ 'ok' if api_status.config_ok else 'error' }}">
+                {{ 'Dane OK' if api_status.config_ok else 'Brak danych' }}
+              </span>
+              <span class="status {{ 'ok' if api_status.tokens_ok else 'error' }}">
+                {{ 'Token OK' if api_status.tokens_ok else 'Brak tokenu' }}
+              </span>
+              {% if api_status.test_status %}
+                <span class="status {{ api_status.test_status }}">
+                  {{ 'Test OK' if api_status.test_status == 'ok' else 'Test błąd' }}
+                </span>
+              {% endif %}
+            </div>
+          </div>
+
+          {% if show_api_form %}
+            <div class="api-help">
+              <p><strong>Skąd wziąć dane API Apilo:</strong></p>
+              <ol>
+                <li>Wejdź na adres swojego konta: <code>https://twoje-konto.apilo.com/admin/rest-api/</code>.</li>
+                <li>W zakładce <strong>Klucze API Apilo</strong> kliknij <strong>Nowa aplikacja REST API</strong>.</li>
+                <li>Przepisz do panelu: Adres API, Client ID, Client Secret, Kod autoryzacji.</li>
+              </ol>
+            </div>
+
+            <form method="post" class="stack">
+              <input type="hidden" name="action" value="api">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <div class="form-grid">
+                <label class="full">
+                  Adres API (endpoint)
+                  <input type="text" name="apilo_base_url" placeholder="https://twoje-konto.apilo.com" value="{{ api.get('apilo_base_url', '') }}">
+                </label>
+                <label>
+                  Client ID
+                  <input type="text" name="apilo_client_id" value="{{ api.get('apilo_client_id', '') }}">
+                </label>
+                <label>
+                  Client Secret
+                  <input
+                    type="password"
+                    name="apilo_client_secret"
+                    placeholder="{{ 'Sekret jest już ustawiony. Wpisz nowy, aby podmienić.' if api.get('has_client_secret') else '' }}"
+                    autocomplete="new-password"
+                  >
+                  <span class="field-help">Pozostaw puste, aby zachować obecny sekret.</span>
+                </label>
+                <label>
+                  Kod autoryzacji
+                  <input type="text" name="apilo_auth_code" placeholder="Wklej kod autoryzacji z Apilo">
+                </label>
+                <label class="checkbox-row full">
+                  <input type="checkbox" name="apilo_client_secret_clear" value="1">
+                  <span>Wyczyść zapisany Client Secret</span>
+                </label>
+              </div>
+              <div class="action-row">
+                <button class="btn primary" type="submit">Zapisz dane i pobierz token</button>
+                {% if api_locked and api_edit_mode %}
+                  <a class="btn small outline" href="{{ url_for('settings') }}">Ukryj edycję API</a>
+                {% endif %}
+              </div>
+            </form>
+
+            <form method="post" class="stack api-test-form">
+              <input type="hidden" name="action" value="api_test">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <div class="action-row">
+                <button class="btn" type="submit">Testuj połączenie</button>
+                {% if api_status.test_message %}
+                  <div class="hint">Ostatni test: {{ api_status.test_at }} - {{ api_status.test_message }}</div>
+                {% endif %}
+              </div>
+            </form>
+          {% else %}
+            <div class="api-lock-note">
+              Dane API Apilo są poprawne. Edycja pól jest ukryta, aby ograniczyć przypadkowe zmiany.
+            </div>
+            <div class="action-row">
+              <a class="btn small outline" href="{{ url_for('settings', edit_api=1) }}">Edytuj dane API</a>
+              {% if api_status.test_message %}
+                <div class="hint">Ostatni test: {{ api_status.test_at }} - {{ api_status.test_message }}</div>
+              {% endif %}
+            </div>
+          {% endif %}
+        </div>
+
+        <div class="card full">
+          <div class="card-head">
+            <div>
+              <h2>EmpikPlace API</h2>
+              <p class="card-desc">Bezpośredni odczyt statusów ofert i raportów błędów. Ceny i stany nadal zapisuje Apilo.</p>
+            </div>
+            <div class="status-row">
+              <span class="status {{ 'ok' if empik.has_api_key else 'error' }}">
+                {{ 'Klucz ustawiony' if empik.has_api_key else 'Brak klucza' }}
+              </span>
+              {% if empik.test_status %}
+                <span class="status {{ empik.test_status }}">
+                  {{ 'Test OK' if empik.test_status == 'ok' else 'Test błąd' }}
+                </span>
+              {% endif %}
+            </div>
+          </div>
+          <div class="api-help">
+            <p><strong>Skąd wziąć klucz:</strong> Panel Sprzedawcy EmpikPlace → nazwa użytkownika → Klucz API → Wygeneruj nowy klucz.</p>
+            <p>Klucz zostanie zaszyfrowany w bazie. Nie wysyłaj go w wiadomości.</p>
+          </div>
+          <form method="post" class="stack">
+            <input type="hidden" name="action" value="empik">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="form-grid">
+              <label>
+                Klucz API EmpikPlace
+                <input
+                  type="password"
+                  name="empik_api_key"
+                  placeholder="{{ 'Klucz jest już ustawiony. Wpisz nowy, aby podmienić.' if empik.has_api_key else '' }}"
+                  autocomplete="new-password"
+                >
+                <span class="field-help">Pozostaw puste, aby zachować obecny klucz.</span>
+              </label>
+              <label>
+                ID sklepu (opcjonalne)
+                <input type="number" min="1" step="1" name="empik_shop_id" value="{{ empik.shop_id }}">
+                <span class="field-help">Zostaw puste, jeśli klucz ma dostęp tylko do jednego sklepu.</span>
+              </label>
+              <label class="checkbox-row full">
+                <input type="checkbox" name="empik_api_key_clear" value="1">
+                <span>Wyczyść zapisany klucz EmpikPlace</span>
+              </label>
+            </div>
+            <div class="action-row">
+              <button class="btn primary" type="submit">Zapisz Empik API</button>
+              <a class="btn small outline" href="https://www.pomoc.empikplace.com/portal/pl/kb/articles/developer-portal-18-9-2025" target="_blank" rel="noopener noreferrer">Dokumentacja</a>
+            </div>
+          </form>
+          <form method="post" class="stack api-test-form">
+            <input type="hidden" name="action" value="empik_test">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="action-row">
+              <button class="btn" type="submit" {% if not empik.has_api_key %}disabled{% endif %}>Testuj Empik API</button>
+              {% if empik.test_message %}
+                <div class="hint">Ostatni test: {{ empik.test_at }} - {{ empik.test_message }}</div>
+              {% endif %}
+            </div>
+          </form>
+          {% if empik.has_api_key %}
+            <div class="settings-integration-status">
+              <div class="details-stats">
+                <div>Ostatnia synchronizacja: <strong>{{ empik_connection.last_sync_at or '-' }}</strong></div>
+                <div>Błędy importów z 30 dni: <strong>{{ empik_connection.error_lines }}</strong></div>
+              </div>
+              {% if empik_connection.last_error %}
+                <div class="message error">Ostatni błąd: {{ empik_connection.last_error }}</div>
+              {% endif %}
+              <div class="action-row">
+                <form method="post" action="{{ url_for('empik_sync') }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="next" value="{{ url_for('settings') }}">
+                  <button class="btn" type="submit">Odśwież dane Empik</button>
+                </form>
+              </div>
+              {% if empik_connection.error_lines > 0 %}
+                <div class="settings-import-errors">
+                  <h3>Importy z błędami</h3>
+                  {% for item in empik_imports %}
+                    {% if item.lines_in_error > 0 %}
+                      <div class="settings-import-row">
+                        <span>Import {{ item.import_id }} · błędów: {{ item.lines_in_error }}</span>
+                        {% if item.has_error_report %}
+                          <a href="{{ url_for('empik_error_report', import_id=item.import_id) }}">Pobierz raport OF03</a>
+                        {% endif %}
+                      </div>
+                    {% endif %}
+                  {% endfor %}
+                </div>
+              {% endif %}
+            </div>
+          {% endif %}
+        </div>
+
+        <div class="settings-break full">
+          <h2>Widok panelu</h2>
+          <p>Wybierz kanały potrzebne w codziennej pracy. Dane nadal są synchronizowane, nawet jeśli kolumna jest ukryta.</p>
+        </div>
+
+        <div class="card full settings-visibility-card">
+          <div class="card-head">
+            <div>
+              <h2>Widoczność kanałów</h2>
+              <p class="card-desc">Ukryj nieużywane kanały, aby tabela była krótsza i czytelniejsza.</p>
+            </div>
+          </div>
+          <form method="post" class="stack">
+            <input type="hidden" name="action" value="channel_visibility">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label class="visibility-option">
+              <input type="checkbox" name="sales_channels_show_etsy" value="1" {% if channel_visibility.show_etsy %}checked{% endif %}>
+              <span>
+                <strong>Pokaż Etsy w tabeli kanałów</strong>
+                <small>Wyłączone domyślnie. Włącz, gdy wrócisz do sprzedaży na Etsy.</small>
+              </span>
+            </label>
+            <div class="action-row">
+              <button class="btn primary" type="submit">Zapisz widok</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>Cennik Apilo dla cen Allegro</h2>
+              <p class="card-desc">To ustawienie wskazuje cennik zapisany w Apilo, z którego panel pobiera ceny Allegro.</p>
+            </div>
+          </div>
+          <form method="post" class="stack">
+            <input type="hidden" name="action" value="allegro">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="form-grid">
+              <label>
+                ID cennika w Apilo
+                <input type="number" min="1" step="1" name="allegro_price_list_id" placeholder="20" value="{{ allegro.get('allegro_price_list_id', '') }}">
+                <span class="field-help">
+                  To unikalny numer cennika z Apilo. Pobierzesz go z listy cenników
+                  (<code>GET /rest/api/warehouse/price/</code>). Ten identyfikator jest używany
+                  podczas synchronizacji do pobrania cen Allegro przez
+                  <code>/rest/api/warehouse/price-calculated/?price=ID</code>, a potem
+                  zapisania ich w panelu do porównania cen i wyceny magazynu.
+                </span>
+              </label>
+            </div>
+            <div class="action-row">
+              <button class="btn" type="submit">Zapisz ustawienia cennika</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="settings-break full">
+          <h2>Operacje panelu</h2>
+          <p>Sugestie i przeliczenia magazynu.</p>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>Sugestie stanów</h2>
+              <p class="card-desc">Ustaw okres sprzedaży i bufor bezpieczeństwa.</p>
+            </div>
+          </div>
+          <form method="post" class="stack">
+            <input type="hidden" name="action" value="suggestions">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="form-grid">
+              <label>
+                Czas produkcji (dni)
+                <input type="number" min="1" step="1" name="lead_time_days" value="{{ suggest_lead_time_days or 1 }}">
+              </label>
+              <label>
+                Okres sprzedaży do kalkulacji (dni)
+                <select name="suggest_days">
+                  <option value="30" {% if suggest_days == 30 %}selected{% endif %}>30</option>
+                  <option value="60" {% if suggest_days == 60 %}selected{% endif %}>60</option>
+                  <option value="120" {% if suggest_days == 120 %}selected{% endif %}>120</option>
+                  <option value="180" {% if suggest_days == 180 %}selected{% endif %}>180</option>
+                  <option value="365" {% if suggest_days == 365 %}selected{% endif %}>365</option>
+                </select>
+              </label>
+              <label>
+                Bufor bezpieczeństwa (%)
+                <input type="number" min="0" step="0.1" name="safety_pct" value="{{ suggest_safety_pct or 20 }}">
+              </label>
+            </div>
+            <div class="action-row">
+              <button class="btn" type="submit">Zapisz ustawienia</button>
+            </div>
+          </form>
+          <form method="post" class="stack inline-action-form">
+            <input type="hidden" name="action" value="suggestions_refresh">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="action-row">
+              <button class="btn primary" type="submit">Przelicz sugestie</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>Wartość magazynu</h2>
+              <p class="card-desc">Przelicz wartość wg cen sklepu i Allegro.</p>
+            </div>
+          </div>
+          <form method="post" class="stack">
+            <input type="hidden" name="action" value="inventory_value">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="action-row">
+              <button class="btn primary" type="submit">Przelicz wartość magazynu</button>
+            </div>
+          </form>
+          {% if inventory_values.store or inventory_values.allegro %}
+            <div class="details-stats">
+              <div>Sklep: <strong>{{ inventory_values.store | pln }}</strong></div>
+              <div>Allegro: <strong>{{ inventory_values.allegro | pln }}</strong></div>
+              <div>Ostatnie przeliczenie: <strong>{{ inventory_values.updated_at or "-" }}</strong></div>
+            </div>
+          {% else %}
+            <div class="details-empty">Brak przeliczonej wartości magazynu.</div>
+          {% endif %}
+        </div>
+
+        <div class="card full">
+          <div class="card-head">
+            <div>
+              <h2>Alert niskich stanów</h2>
+              <p class="card-desc">Automatyczny i ręczny alert email dla bieżących braków.</p>
+            </div>
+          </div>
+          <div class="details-stats">
+            <div>Auto alert: <strong>{{ "Włączony" if low_stock_alerts.enabled else "Wyłączony" }}</strong></div>
+            <div>Interwał: <strong>{{ low_stock_alerts.interval_hours or 24 }}</strong> godz.</div>
+            <div>Pozycji z brakami: <strong>{{ low_stock_alerts.count or 0 }}</strong></div>
+            <div>Łączny brak: <strong>{{ low_stock_alerts.units or 0 }}</strong> szt.</div>
+            <div>Ostatni check: <strong>{{ low_stock_alerts.last_check_at or "-" }}</strong></div>
+            <div>Następna próba: <strong>{{ low_stock_alerts.next_check_at or "-" }}</strong></div>
+            <div>Ostatnia wysyłka: <strong>{{ low_stock_alerts.last_sent_at or "-" }}</strong></div>
+            <div>Ostatnio wysłano: <strong>{{ low_stock_alerts.last_sent_count_label or "0 pozycji" }}</strong></div>
+          </div>
+          {% if low_stock_alerts.last_result %}
+            <div class="details-text">Ostatni wynik: <strong>{{ low_stock_alerts.last_result }}</strong></div>
+          {% endif %}
+          {% if low_stock_alerts.last_error %}
+            <div class="message error">
+              Ostatni błąd: {{ low_stock_alerts.last_error }}
+              {% if low_stock_alerts.last_error_at %}({{ low_stock_alerts.last_error_at }}){% endif %}
+            </div>
+          {% endif %}
+          <form method="post" class="stack inline-action-form">
+            <input type="hidden" name="action" value="alerts_settings">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="form-grid">
+              <label class="checkbox-row full">
+                <input type="checkbox" name="alerts_low_stock_enabled" value="1" {% if low_stock_alerts.enabled %}checked{% endif %}>
+                <span>Włącz automatyczny alert niskich stanów</span>
+              </label>
+              <label>
+                Interwał wysyłki (godziny)
+                <input type="number" min="1" max="720" step="1" name="alerts_low_stock_interval_hours" value="{{ low_stock_alerts.interval_hours or 24 }}">
+                <span class="field-help">Auto alert wysyła email tylko wtedy, gdy lista braków zmieniła się od ostatniej wysyłki.</span>
+              </label>
+            </div>
+            <div class="action-row">
+              <button class="btn" type="submit">Zapisz automatykę</button>
+            </div>
+          </form>
+          {% if low_stock_alerts.rows %}
+            <table class="details-table">
+              <thead>
+                <tr>
+                  <th>Produkt</th>
+                  <th>EAN</th>
+                  <th>Stan</th>
+                  <th>Sug. stan</th>
+                  <th>Brak</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in low_stock_alerts.rows %}
+                <tr>
+                  <td>{{ row.name }}</td>
+                  <td>{{ row.ean or "-" }}</td>
+                  <td class="qty">{{ row.quantity }}</td>
+                  <td class="qty">{{ row.suggested_qty }}</td>
+                  <td class="qty">{{ row.shortage_qty }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          {% else %}
+            <div class="details-empty">Brak pozycji wymagających alertu.</div>
+          {% endif %}
+          <form method="post" class="stack inline-action-form">
+            <input type="hidden" name="action" value="alerts_email">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="action-row">
+              <button class="btn primary" type="submit">Wyślij alert email</button>
+            </div>
+          </form>
+          <div class="card-head subsection-head">
+            <div>
+              <h2>Historia wysyłek alertu</h2>
+              <p class="card-desc">Ostatnie wysłane alerty email.</p>
+            </div>
+          </div>
+          {% if low_stock_alerts.history %}
+            <table class="details-table">
+              <thead>
+                <tr>
+                  <th>Czas</th>
+                  <th>Tryb</th>
+                  <th>Pozycji</th>
+                  <th>IP</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in low_stock_alerts.history %}
+                <tr>
+                  <td>{{ row.created_at }}</td>
+                  <td>{{ row.mode_label }}</td>
+                  <td>{{ row.count_label }}</td>
+                  <td>{{ row.actor_ip }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          {% else %}
+            <div class="details-empty">Brak historii wysłanych alertów.</div>
+          {% endif %}
+        </div>
+
+        <div class="settings-break full">
+          <h2>Powiadomienia i bezpieczeństwo</h2>
+          <p>Konfiguracja email i hasła do panelu.</p>
+        </div>
+
+        <div class="card full">
+          <div class="card-head">
+            <div>
+              <h2>Sekrety i klucz szyfrowania</h2>
+              <p class="card-desc">Hasła SMTP, sekrety API i tokeny są szyfrowane przed zapisem do bazy SQLite.</p>
+            </div>
+          </div>
+          <div class="details-stats">
+            <div>Tryb klucza: <strong>{{ secret_storage.mode_label }}</strong></div>
+            <div>Lokalizacja: <strong>{{ secret_storage.location }}</strong></div>
+          </div>
+          <div class="details-text">
+            Przy backupie bazy zachowaj też ten klucz. Bez niego odszyfrowanie zapisanych sekretów nie będzie możliwe.
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>Email (SMTP)</h2>
+              <p class="card-desc">Skonfiguruj wysyłkę i przetestuj skrzynkę.</p>
+            </div>
+          </div>
+          <form method="post" class="stack">
+            <input type="hidden" name="action" value="email">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="form-grid">
+              <label>
+                SMTP host
+                <input type="text" name="smtp_host" value="{{ email.get('smtp_host', '') }}">
+              </label>
+              <label>
+                SMTP port
+                <input type="text" name="smtp_port" value="{{ email.get('smtp_port', '') }}">
+              </label>
+              <label>
+                SMTP user
+                <input type="text" name="smtp_user" value="{{ email.get('smtp_user', '') }}">
+              </label>
+              <label>
+                SMTP password
+                <input
+                  type="password"
+                  name="smtp_password"
+                  placeholder="{{ 'Hasło SMTP jest zapisane. Wpisz nowe, aby podmienić.' if email.get('has_smtp_password') else '' }}"
+                  autocomplete="new-password"
+                >
+                <span class="field-help">Pozostaw puste, aby zachować obecne hasło SMTP.</span>
+              </label>
+              <label>
+                Użyj STARTTLS
+                <select name="smtp_use_tls">
+                  <option value="0" {% if email.get('smtp_use_tls') == '0' %}selected{% endif %}>Nie</option>
+                  <option value="1" {% if email.get('smtp_use_tls') == '1' %}selected{% endif %}>Tak</option>
+                </select>
+              </label>
+              <label>
+                Użyj SSL (port 465)
+                <select name="smtp_use_ssl">
+                  <option value="0" {% if email.get('smtp_use_ssl') == '0' %}selected{% endif %}>Nie</option>
+                  <option value="1" {% if email.get('smtp_use_ssl') == '1' %}selected{% endif %}>Tak</option>
+                </select>
+              </label>
+              <label>
+                Nadawca (From)
+                <input type="text" name="smtp_from" value="{{ email.get('smtp_from', '') }}">
+              </label>
+              <label>
+                Odbiorca testowy (To)
+                <input type="text" name="smtp_to" value="{{ email.get('smtp_to', '') }}">
+              </label>
+              <label class="checkbox-row full">
+                <input type="checkbox" name="smtp_password_clear" value="1">
+                <span>Wyczyść zapisane hasło SMTP</span>
+              </label>
+            </div>
+            <div class="action-row">
+              <button class="btn" type="submit">Zapisz ustawienia email</button>
+            </div>
+          </form>
+          <form method="post" class="stack inline-action-form">
+            <input type="hidden" name="action" value="email_test">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="action-row">
+              <button class="btn primary" type="submit">Wyślij testowy email</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>Zmiana hasła</h2>
+              <p class="card-desc">Zmień hasło dostępu do panelu.</p>
+            </div>
+          </div>
+          <form method="post" class="stack">
+            <input type="hidden" name="action" value="password">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="form-grid">
+              <label>
+                Nowe hasło (min. 8 znaków)
+                <input type="password" name="password" placeholder="Wpisz nowe hasło">
+              </label>
+              <label>
+                Powtórz hasło
+                <input type="password" name="confirm" placeholder="Powtórz hasło">
+              </label>
+            </div>
+            <div class="action-row">
+              <button class="btn" type="submit">Zmień hasło</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="card full">
+          <div class="card-head">
+            <div>
+              <h2>Historia zmian</h2>
+              <p class="card-desc">Ostatnie operacje wykonane w panelu wraz z adresem IP.</p>
+            </div>
+          </div>
+          {% if audit_entries %}
+            <table class="details-table">
+              <thead>
+                <tr>
+                  <th>Czas</th>
+                  <th>Akcja</th>
+                  <th>Obiekt</th>
+                  <th>Zmiana</th>
+                  <th>IP</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for entry in audit_entries %}
+                <tr>
+                  <td>{{ entry.created_at }}</td>
+                  <td>{{ entry.action }}</td>
+                  <td>
+                    <strong>{{ entry.entity_label }}</strong>
+                    <div class="hint">{{ entry.entity_type }}</div>
+                  </td>
+                  <td>{{ entry.change }}</td>
+                  <td>{{ entry.actor_ip }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          {% else %}
+            <div class="details-empty">Brak historii zmian.</div>
+          {% endif %}
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

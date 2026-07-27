@@ -1,0 +1,40 @@
+services:
+  apilo-panel:
+    image: "apilo-panel:1.14.1"
+    build:
+      context: .
+      dockerfile: Dockerfile
+      network: host
+      args:
+        APP_VERSION: "1.14.1"
+    container_name: apilo-panel
+    restart: unless-stopped
+    network_mode: host
+    user: "1000:1000"
+    labels:
+      - com.apilo-stock-panel.app.version=1.14.1
+      - com.apilo-stock-panel.hardening.version=1.14.1
+    environment:
+      TZ: Europe/Warsaw
+      FLASK_DEBUG: "0"
+      APP_HOST: "127.0.0.1"
+      APP_PORT: "5080"
+      APP_THREADS: "4"
+      APP_TIMEOUT: "120"
+      APILO_DB_PATH: "/app/data/apilo.sqlite3"
+      THUMB_MAX_DOWNLOAD_BYTES: "8000000"
+    volumes:
+      - ./data/db:/app/data
+      - ./data/logs:/app/logs
+      - ./data/thumbs:/app/static/thumbs
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=128m,mode=1777
+    pids_limit: 128
+    mem_limit: 512m
+    cpus: "1.00"
+    stop_grace_period: 30s

@@ -1,0 +1,61 @@
+name: Bug report
+description: Zgłoszenie błędu w aplikacji lub deploymencie
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Opis problemu
+      description: Krótko opisz, co nie działa.
+      placeholder: Po kliknięciu "Pobierz z Apilo" aplikacja pokazuje błąd...
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Kroki odtworzenia
+      description: Podaj dokładne kroki.
+      placeholder: |
+        1. Wejdź do...
+        2. Kliknij...
+        3. Zobacz błąd...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Oczekiwane zachowanie
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Rzeczywiste zachowanie
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Wersja aplikacji
+      placeholder: np. 1.0.37
+    validations:
+      required: true
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: Sposób uruchomienia
+      options:
+        - Docker
+        - Lokalnie
+        - systemd
+        - Inne
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logi / screeny
+      description: Wklej istotny fragment logów bez sekretów i tokenów.
+      render: shell
